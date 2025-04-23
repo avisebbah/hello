@@ -1,0 +1,366 @@
+// components/Layout.js
+import React from 'react';
+import Link from 'next/link';
+
+export default function Layout({ children }) {
+  return (
+    <div className="min-h-screen bg-gray-50 p-4" dir="rtl">
+      <header className="mb-6 flex justify-between items-center">
+        <h1 className="text-3xl font-bold text-blue-700">מרשמים דיגיטליים</h1>
+        <nav>
+          <ul className="flex space-x-4 space-x-reverse">
+            <li>
+              <Link href="/">
+                <a className="text-blue-600 hover:text-blue-800">דף הבית</a>
+              </Link>
+            </li>
+            <li>
+              <Link href="/prescriptions/new">
+                <a className="text-blue-600 hover:text-blue-800">מרשם חדש</a>
+              </Link>
+            </li>
+            <li>
+              <Link href="/prescriptions/history">
+                <a className="text-blue-600 hover:text-blue-800">היסטוריה</a>
+              </Link>
+            </li>
+          </ul>
+        </nav>
+      </header>
+      <main className="container mx-auto max-w-3xl">{children}</main>
+    </div>
+  );
+}
+
+// components/PrescriptionForm.js
+import { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+import { useRouter } from 'next/router';
+import SignatureCanvas from 'react-signature-canvas';
+
+export default function PrescriptionForm() {
+  const router = useRouter();
+  const [patient, setPatient] = useState({ name: '', id: '', age: '', condition: '' });
+  const [doctor, setDoctor] = useState({ name: '', license: '' });
+  const [drug, setDrug] = useState('');
+  const [customDrug, setCustomDrug] = useState({ name: '', dosage: '', instructions: '' });
+  const [isCustomDrug, setIsCustomDrug] = useState(false);
+  const [drugsList, setDrugsList] = useState([]);
+  const [status, setStatus] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const sigCanvasRef = useRef({});
+
+  useEffect(() => {
+    // קבלת הרשימה מתוך API מקומי
+    axios.get('/api/drugs')
+      .then(res => setDrugsList(res.data))
+      .catch(() => setDrugsList([]));
+  }, []);
+
+  const clearSignature = () => {
+    if (sigCanvasRef.current.clear) {
+      sigCanvasRef.current.clear();
+    }
+  };
+
+  const handleSubmit = async e => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    
+    try {
+      const signatureData = sigCanvasRef.current.isEmpty() 
+        ? null 
+        : sigCanvasRef.current.toDataURL();
+        
+      if (!signatureData) {
+        setStatus('נדרשת חתימת רופא');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const prescriptionData = {
+        patient,
+        doctor,
+        drug: isCustomDrug ? customDrug : { name: drug, dosage: '', instructions: '' },
+        isCustomDrug,
+        signature: signatureData,
+        date: new Date().toISOString(),
+      };
+
+      await axios.post('/api/prescriptions', prescriptionData);
+      setStatus('המרשם נשלח בהצלחה');
+      
+      // ניקוי הטופס
+      setTimeout(() => {
+        router.push('/prescriptions/history');
+      }, 1500);
+    } catch (err) {
+      console.error(err);
+      setStatus('שגיאה בשליחה');
+    }
+    
+    setIsSubmitting(false);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-white shadow-md rounded-lg p-6 space-y-6">
+      <div className="border-b pb-4 mb-4">
+        <h2 className="text-xl font-semibold mb-4">פרטי מטופל</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-gray-700 mb-1">שם מטופל:</label>
+            <input
+              value={patient.name}
+              onChange={e => setPatient({ ...patient, name: e.target.value })}
+              className="border rounded p-2 w-full"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-700 mb-1">תעודת זהות:</label>
+            <input
+              value={patient.id}
+              onChange={e => setPatient({ ...patient, id: e.target.value })}
+              className="border rounded p-2 w-full"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-700 mb-1">גיל:</label>
+            <input
+              type="number"
+              value={patient.age}
+              onChange={e => setPatient({ ...patient, age: e.target.value })}
+              className="border rounded p-2 w-full"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-700 mb-1">אבחנה:</label>
+            <input
+              value={patient.condition}
+              onChange={e => setPatient({ ...patient, condition: e.target.value })}
+              className="border rounded p-2 w-full"
+              required
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="border-b pb-4 mb-4">
+        <h2 className="text-xl font-semibold mb-4">פרטי רופא</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-gray-700 mb-1">שם הרופא:</label>
+            <input
+              value={doctor.name}
+              onChange={e => setDoctor({ ...doctor, name: e.target.value })}
+              className="border rounded p-2 w-full"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-700 mb-1">מספר רישיון:</label>
+            <input
+              value={doctor.license}
+              onChange={e => setDoctor({ ...doctor, license: e.target.value })}
+              className="border rounded p-2 w-full"
+              required
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="border-b pb-4 mb-4">
+        <h2 className="text-xl font-semibold mb-4">פרטי תרופה</h2>
+        
+        <div className="mb-4">
+          <div className="flex items-center space-x-4 space-x-reverse mb-2">
+            <input 
+              type="checkbox"
+              id="customDrugToggle"
+              checked={isCustomDrug}
+              onChange={() => setIsCustomDrug(!isCustomDrug)}
+              className="w-4 h-4"
+            />
+            <label htmlFor="customDrugToggle" className="text-gray-700">
+              הוסף תרופה מותאמת אישית
+            </label>
+          </div>
+        </div>
+
+        {!isCustomDrug ? (
+          <div>
+            <label className="block text-gray-700 mb-1">בחר תרופה מהרשימה:</label>
+            <select
+              value={drug}
+              onChange={e => setDrug(e.target.value)}
+              className="border rounded p-2 w-full"
+              required={!isCustomDrug}
+              disabled={isCustomDrug}
+            >
+              <option value="" disabled>בחר תרופה</option>
+              {drugsList.map(d => (
+                <option key={d.id} value={d.name}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-700 mb-1">שם התרופה:</label>
+              <input
+                value={customDrug.name}
+                onChange={e => setCustomDrug({ ...customDrug, name: e.target.value })}
+                className="border rounded p-2 w-full"
+                required={isCustomDrug}
+              />
+            </div>
+            <div>
+              <label className="block text-gray-700 mb-1">מינון:</label>
+              <input
+                value={customDrug.dosage}
+                onChange={e => setCustomDrug({ ...customDrug, dosage: e.target.value })}
+                className="border rounded p-2 w-full"
+                required={isCustomDrug}
+              />
+            </div>
+            <div>
+              <label className="block text-gray-700 mb-1">הוראות שימוש:</label>
+              <textarea
+                value={customDrug.instructions}
+                onChange={e => setCustomDrug({ ...customDrug, instructions: e.target.value })}
+                className="border rounded p-2 w-full"
+                rows="3"
+                required={isCustomDrug}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="border-b pb-4 mb-4">
+        <h2 className="text-xl font-semibold mb-4">חתימת רופא</h2>
+        <div className="border rounded p-2 mb-2 bg-gray-50">
+          <SignatureCanvas
+            ref={sigCanvasRef}
+            canvasProps={{ 
+              className: 'signature-canvas w-full h-40 border cursor-crosshair',
+              style: { borderRadius: '0.25rem' }
+            }}
+          />
+        </div>
+        <button 
+          type="button" 
+          onClick={clearSignature}
+          className="text-sm text-gray-600 hover:text-gray-800"
+        >
+          נקה חתימה
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <button 
+          type="submit" 
+          className={`bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? 'שולח...' : 'שלח מרשם'}
+        </button>
+        {status && (
+          <div className={`text-sm ${status.includes('שגיאה') ? 'text-red-600' : 'text-green-600'}`}>
+            {status}
+          </div>
+        )}
+      </div>
+    </form>
+  );
+}
+
+// components/PrescriptionCard.js
+import React, { useState } from 'react';
+
+export default function PrescriptionCard({ prescription }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  // המרה מחזרה של תאריך לפורמט מקומי
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('he-IL', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  return (
+    <div className="bg-white shadow rounded-lg overflow-hidden mb-4">
+      <div 
+        className="p-4 cursor-pointer flex justify-between items-center" 
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div>
+          <h3 className="font-semibold text-lg">
+            {prescription.patient.name} - {prescription.isCustomDrug ? prescription.drug.name : prescription.drug}
+          </h3>
+          <p className="text-gray-600 text-sm">
+            {formatDate(prescription.date)} | רופא: {prescription.doctor?.name || 'לא צוין'}
+          </p>
+        </div>
+        <div className="text-gray-500">
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            className={`h-5 w-5 transition-transform ${isExpanded ? 'transform rotate-180' : ''}`}
+            fill="none" 
+            viewBox="0 0 24 24" 
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </div>
+      
+      {isExpanded && (
+        <div className="border-t px-4 py-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h4 className="font-semibold mb-2">פרטי מטופל</h4>
+              <p>שם: {prescription.patient.name}</p>
+              {prescription.patient.id && <p>ת.ז.: {prescription.patient.id}</p>}
+              <p>גיל: {prescription.patient.age}</p>
+              <p>אבחנה: {prescription.patient.condition}</p>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold mb-2">פרטי תרופה</h4>
+              {prescription.isCustomDrug ? (
+                <>
+                  <p>שם: {prescription.drug.name}</p>
+                  <p>מינון: {prescription.drug.dosage}</p>
+                  <p>הוראות: {prescription.drug.instructions}</p>
+                </>
+              ) : (
+                <p>{prescription.drug}</p>
+              )}
+            </div>
+          </div>
+          
+          {prescription.signature && (
+            <div className="mt-4">
+              <h4 className="font-semibold mb-2">חתימת רופא</h4>
+              <div className="bg-gray-50 border p-2 rounded">
+                <img 
+                  src={prescription.signature} 
+                  alt="חתימת רופא" 
+                  className="max-h-20"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
